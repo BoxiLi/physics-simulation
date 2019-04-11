@@ -1,9 +1,9 @@
 from mc_simulation import *
 
 
-class Metropolis_Ising_sim(discrete_Ising_sim):
+class Metropolis_ising_sim(discrete_ising_sim):
     def __init__(self, size, J, h, kT, iter_num, thermal_num):
-        discrete_Ising_sim.__init__(self, size, J, h, iter_num, thermal_num)
+        discrete_ising_sim.__init__(self, size, J, h, iter_num, thermal_num)
         if kT <= 0:
             raise ValueError("Temperature must be non negative")
         elif kT == 0.:
@@ -46,7 +46,7 @@ class Metropolis_Ising_sim(discrete_Ising_sim):
         return energy_diff
 
 
-    def update_flip(self, pos):
+    def metropolis_update(self, pos):
         """
         One metropolis step, flip the spin according to a certain state
         """
@@ -86,13 +86,14 @@ class Metropolis_Ising_sim(discrete_Ising_sim):
         step = 0
         while(step < self.thermal_num):
             pos = tuple(rand_pos[step])
-            self.update_flip(pos) 
+            self.metropolis_update(pos) 
             step += 1
 
 
     def run(self, new_iter_num = None, gap = 0):
         """
         Run the whole simulation, including thermalization.
+        Return a dictionary of the measured values
         """
         # Thermalize
         self.thermalize()
@@ -111,7 +112,7 @@ class Metropolis_Ising_sim(discrete_Ising_sim):
         gap_counter = 0
         while(step < self.iter_num):
             pos = tuple(rand_pos[step])
-            self.update_flip(pos)
+            self.metropolis_update(pos)
             gap_counter += 1
             if (gap_counter >= gap):
                 try:

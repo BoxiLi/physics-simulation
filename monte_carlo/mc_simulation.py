@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-class discrete_Ising_sim(object):
+class discrete_ising_sim(object):
     def __init__(self, size, J, h, iter_num, thermal_num):
         self.size = tuple(size)
         self.dim = len(size)
@@ -58,18 +58,18 @@ class discrete_Ising_sim(object):
         coordinates
         origin_pos: a tuple corresponds to the position of current spin
         """
-        neighbours_list = []
+        neighbours_set = set()
         for neighbour_axis in range(self.dim):
             neighb1_pos = list(origin_pos)
             neighb1_pos[neighbour_axis] = np.mod(origin_pos[neighbour_axis] - 1, self.size[neighbour_axis])
             neighb1_pos = tuple(neighb1_pos)  # IMPORTANT to use TUPLE! list is NOT the same!
-            neighbours_list.append(neighb1_pos)
+            neighbours_set.add(neighb1_pos)
 
             neighb2_pos = list(origin_pos)
             neighb2_pos[neighbour_axis] = np.mod(origin_pos[neighbour_axis] + 1, self.size[neighbour_axis])
             neighb2_pos = tuple(neighb2_pos) 
-            neighbours_list.append(neighb2_pos)
-        return neighbours_list
+            neighbours_set.add(neighb2_pos)
+        return neighbours_set
 
 
 def autocorrelation(x):
