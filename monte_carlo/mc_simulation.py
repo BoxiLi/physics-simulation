@@ -72,6 +72,28 @@ class discrete_ising_sim(object):
         return neighbours_set
 
 
+    def thermalize(self, update_method, new_thermal_num = None):
+        """
+        Run many wolff steps but not record the result
+        """
+        # If a new thermalization loop number is given, replace the default value with it
+        if new_thermal_num:
+            if isinstance(new_thermal_num, int):
+                self.thermal_num = new_thermal_num
+            else:
+                raise ValueError("Thermalization loop number has to be an integer")
+        # Generate the random matrix
+        rand_pos = np.empty([self.thermal_num, self.dim], dtype = np.int)
+        for axis in range(self.dim):
+            rand_pos[:,axis] = np.random.randint(0, self.size[axis], self.thermal_num)
+        # Thermalization
+        step = 0
+        while(step < self.thermal_num):
+            pos = tuple(rand_pos[step])
+            update_method(pos) 
+            step += 1
+
+
 def autocorrelation(x):
     """
     Compute the autocorrelation of the signal, based on the properties of the

@@ -1,7 +1,7 @@
 from mc_simulation import *
 
 
-class Metropolis_ising_sim(discrete_ising_sim):
+class metropolis_ising_sim(discrete_ising_sim):
     def __init__(self, size, J, h, kT, iter_num, thermal_num):
         discrete_ising_sim.__init__(self, size, J, h, iter_num, thermal_num)
         if kT <= 0:
@@ -66,28 +66,6 @@ class Metropolis_ising_sim(discrete_ising_sim):
             if R < self.exp_dict[energy_diff]:
                 self.lattice[pos] = -self.lattice[pos]
                 self.energy += energy_diff
-        
-    
-    def thermalize(self, new_thermal_num = None):
-        """
-        Run many metropolis steps but not record the result
-        """
-        # If a new thermalization loop number is given, replace the default value with it
-        if new_thermal_num:
-            if isinstance(new_thermal_num, int):
-                self.thermal_num = new_thermal_num
-            else:
-                raise ValueError("Thermalization loop number has to be an integer")
-        # Generate the random matrix
-        rand_pos = np.empty([self.thermal_num, self.dim], dtype = np.int)
-        for axis in range(self.dim):
-            rand_pos[:,axis] = np.random.randint(0, self.size[axis], self.thermal_num)
-        # Thermalization
-        step = 0
-        while(step < self.thermal_num):
-            pos = tuple(rand_pos[step])
-            self.metropolis_update(pos) 
-            step += 1
 
 
     def run(self, new_iter_num = None, gap = 0):
@@ -96,7 +74,7 @@ class Metropolis_ising_sim(discrete_ising_sim):
         Return a dictionary of the measured values
         """
         # Thermalize
-        self.thermalize()
+        discrete_ising_sim.thermalize(self, update_method = self.metropolis_update)
         # If a new simulation loop number is given, replace the default value with it
         if new_iter_num:
             if isinstance(new_iter_num, int):
