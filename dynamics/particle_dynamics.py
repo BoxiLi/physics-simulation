@@ -13,7 +13,7 @@ class particle_dynamics_sim(object):
         self.v0 = np.empty([par_num, dim])
         self.initialized = False
         self.box = box
-    
+
 
     def run(self):
         """
@@ -33,7 +33,6 @@ class particle_dynamics_sim(object):
             force = LJ_force(self.traj[1])
             self.traj[next] = 2*self.traj[next-1] - self.traj[next-2] + self.dt**2*force
             # periodic boundary        
-            print(self.traj[next])
             self.traj[next] = np.mod(self.traj[next], self.box)
             #vktools
             r_x = self.traj[next][:,0]
@@ -47,7 +46,7 @@ class particle_dynamics_sim(object):
 
             next += 1
 
-        # vtk_writer.writePVD("MD.pvd")
+        vtk_writer.writePVD("MD.pvd")
         return self.traj
 
 
@@ -77,5 +76,5 @@ def LJ_force(pos_all):
     
 
 # np.random.seed(10)
-test = particle_dynamics_sim(dt=0.1, iter_num=10, par_num = 10, dim = 3, box = (10.,10.,10.))
+test = particle_dynamics_sim(dt=0.1, iter_num=1000, par_num = 10, dim = 3, box = (10.,10.,10.))
 result = test.run()
