@@ -3,3 +3,4 @@
 monte_carlo/test.py
 *.vtu
 *.pvd
+dynamics/.vscode/launch.json
