@@ -5,7 +5,9 @@ from itertools import product as iter_product
 """
 traj[time_slice, particle_index, dim]
 """
-class particle_dynamics_sim(object):
+
+# class Linked_cell()
+class Particle_dynamics_sim(object):
     def __init__(self, dt, iter_num, par_num, dim, box=(5.,5.,5.), inter_range = None):
         self. dt = dt
         self.iter_num = iter_num
@@ -24,15 +26,43 @@ class particle_dynamics_sim(object):
         self.initialized = True
 
 
+    def cal_force(self, pos_all, linked_cell, cell_shape, cell_size):
+        """
+        """
+        dim = len(self.box)
+        par_num = pos_all.shape[0]
+        force = np.zeros(pos_all.shape, dtype=np.float64)
+        for par_index1 in range(par_num):
+            pos1 = pos_all[par_index1]
+            if linked_cell is None:
+                search_range = list(range(par_num))
+            else:
+                cell_coor = (pos1//cell_size).astype(int)
+                search_range = find_near_par(linked_cell, cell_coor, cell_shape)
+            for par_index2 in search_range:
+                if par_index1 != par_index2:
+                    pos2 = pos_all[par_index2]
+                    x = pos1-pos2
+                    # apply the minimum image convention
+                    for k in range(dim):
+                        if x[k] > box[k]/2.0:
+                            x[k] -= box[k]
+                        elif x[k] < box[k]/2.0:
+                            x[k] += box[k] 
+                        elif x[k] ==0.0:
+                            print("round off error in particle location")
+                            continue
+
+                    force[par_index1] += LJ_force(x)
+
+        return force
+
+
     def run(self):
         """
         Use Verlet integral method to do the simulation, return the trajectory in the form of
         traj[time_slice, particle_index, dim]
         """
-        global traj0
-        global traj1
-        global traj2 
-        global glo_force
         if self.inter_range is not None:
             cell_shape = (self.box//self.inter_range).astype(int)
             for k in range(len(cell_shape)):
@@ -56,8 +86,8 @@ class particle_dynamics_sim(object):
             # calculate force
             if self.inter_range is not None:
                 self.linked_cell = create_linked_cell(self.traj[next-1], self.box, self.inter_range)
-            force = LJ_force(self.traj[next-1], self.linked_cell, cell_shape, cell_size)
-            # print(force)
+            force = self.cal_force(self.traj[next-1], self.linked_cell, cell_shape, cell_size)
+            # verlet step
             self.traj[next] = 2*self.traj[next-1] - self.traj[next-2] + self.dt**2*force 
             # periodic boundary        
             self.traj[next] = np.mod(self.traj[next], self.box) #??????????????????? mod could be a problem
@@ -71,16 +101,6 @@ class particle_dynamics_sim(object):
             F_z = force[:,2]
             vtk_writer.snapshot("simu/MD_"+ str(self.dt) + ".vtu", r_x,r_y,r_z,
                 x_force = F_x, y_force = F_y, z_force = F_z)
-            
-            if 0.0 in self.traj[next]:
-                print(self.traj[next-1])
-                print(self.traj[next])
-                print(force)
-                traj0 = self.traj[next-2]
-                traj1 = self.traj[next-1]
-                traj2 = self.traj[next]
-                glo_force = force
-                assert(False)
 
             next += 1
 
@@ -172,63 +192,35 @@ def find_near_par(linked_cell, cell_coor, cell_shape):
     return search_range
 
 
-
-def LJ(r, direction):
-    if r==0.0:
-        # print("identical partical!")
-        return 0
-    else:
-        return 4 * (-12*r**(-13) + 6*r**(-7)) * direction
+def LJ_force(x):
+    r2 = np.sum(np.square(x))
+    return - (4 * (-12*r2**(-7) + 6*r2**(-4))) * x
 
 
-def LJ_force(pos_all, linked_cell, cell_shape, cell_size):
-    """
-    Lennard-Jones potential
-    """
-    par_num = pos_all.shape[0]
-    force = np.zeros(pos_all.shape, dtype=np.float64)
-    for par_index1 in range(par_num):
-        pos1 = pos_all[par_index1]
-        if linked_cell is None:
-            search_range = list(range(par_num))
-        else:
-            cell_coor = (pos1//cell_size).astype(int)
-            search_range = find_near_par(linked_cell, cell_coor, cell_shape)
-            # search_range.sort() # why !!!!!!!!!!!?
-        for par_index2 in search_range:
-            if par_index1 != par_index2:
-                pos2 = pos_all[par_index2]
-                dist = pos1-pos2
-                r = np.linalg.norm(dist)
-                if r==0.0:
-                    print("identical partical!")
-                    continue
-                force[par_index1] += -LJ(r, dist/r)
-    tesmp_force = force
+def LJ_total_energy(traj, step, dt):
+    par_num = len(traj[0])
+    assert(step >= 3 and step < len(traj-2))
 
-    force = np.zeros(pos_all.shape, dtype=np.float64)
-    for par_index1 in range(par_num):
-        pos1 = pos_all[par_index1]
-        if linked_cell is None:
-            search_range = list(range(par_num))
-        else:
-            cell_coor = (pos1//cell_size).astype(int)
-            search_range = find_near_par(linked_cell, cell_coor, cell_shape)
-            search_range.sort() # why !!!!!!!!!!!?
-        for par_index2 in search_range:
-            if par_index1 != par_index2:
-                pos2 = pos_all[par_index2]
-                dist = pos1-pos2
-                r = np.linalg.norm(dist)
-                if r==0.0:
-                    print("identical partical!")
-                    continue
-                force[par_index1] += -LJ(r, dist/r)
-                
-    diff = np.max(tesmp_force-force)
-    if diff>1.0e-10:
-        print(diff)
-    return force
+    pos_all1 = traj[step-1]
+    pos_all2 = traj[step]
+    pos_all3 = traj[step+1]
+
+    energy = 0
+    # potential energy
+    for i in range(par_num):
+        for j in range(i+1, par_num):
+            x = pos_all2[i]-pos_all2[j]
+            for k in range(dim):
+                    if abs(x[k]) > box[k]/2.0:
+                        x[k] = box[k] - abs(x[k]) # direction is neglected
+            r2 = np.sum(np.square((x)))
+            energy += 4 * (r2**(-6) + 6*r2**(-3))
+
+    # kinetic energy
+    v = (pos_all3-pos_all1)/(2*dt)
+    energy+= np.sum(0.5*v**2)
+
+    return energy
 
 
 def test_small():
@@ -268,31 +260,23 @@ def test_small():
     result.sort()
     assert(result == [0,1,2,3,4,5,6,7])
 # test_small()
-
-global traj0
-global traj1
-global traj2 
-global glo_force
     
+# parameters
+dt = 0.0001
+iter_num = 1000
+par_num = 10
+dim = 3
+box = [3.]*dim
+inter_range = 2.5
 
 # np.random.seed(0)
-# test = particle_dynamics_sim(dt=0.001, iter_num=1000, par_num = 10, dim = 3, box = (3.,3.,3.))
+# test = Particle_dynamics_sim(dt=0.001, iter_num=1000, par_num = 10, dim = 3, box = (3.,3.,3.))
 # result = test.run()
 # print(result[-1])
 
 np.random.seed(0) 
-test = particle_dynamics_sim(dt=0.001, iter_num=1000, par_num = 10, dim = 3, box = (3.,3.,3.), inter_range=np.inf)
+test = Particle_dynamics_sim(dt, iter_num, par_num, dim, box, inter_range)
 result = test.run()
-print(result[-1])
-
-# start_traj = np.array(
-# [[1.54264129, 0.0415039,  1.26729647],
-# [1.49760777, 0.99701402, 0.44959329],
-# [0.39612573, 1.52106142, 0.33822167],
-# [0.17667963, 1.37071964, 1.90678669],
-# [0.00789653, 1.02438453, 1.62524192],
-# [1.22505213, 1.44351063, 0.58375214],
-# [1.83554825, 1.42915157, 1.08508874],
-# [0.2843401,  0.74668152, 1.34826723],
-# [0.88366635, 0.86802799, 1.23553396],
-# [1.02627649, 1.30079436, 1.20207791]])
+start_e = LJ_total_energy(result, 3, dt)
+end_e = LJ_total_energy(result, iter_num-2, dt)
+print(start_e, end_e)
