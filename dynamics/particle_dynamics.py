@@ -2,11 +2,94 @@ import numpy as np
 import vtktools 
 from functools import reduce
 from itertools import product as iter_product
-"""
-traj[time_slice, particle_index, dim]
-"""
 
-# class Linked_cell()
+
+class Linked_cell(object):
+    def __init__(self, pos_all, box, inter_range):
+        box = np.array(box)
+        self.cells_shape = (box//inter_range).astype(int)
+        np.where(self.cells_shape==0.0, 1, self.cells_shape)
+        # for k in range(len(self.cells_shape)):
+        #     if self.cells_shape[k]==0:
+        #         self.cells_shape[k] = 1
+        # the size of one cell
+        self.cell_size = box/self.cells_shape
+        # total number of cells
+        head_length = reduce(lambda x,y:x*y, self.cells_shape)
+        
+        # allocate particles to different cells
+        cell_allocation = [[] for i in range(head_length)]
+        for par_ind in range(pos_all.shape[0]):
+            pos = pos_all[par_ind]
+            # n-D coordinate of the cell
+            cell_coor = (pos//self.cell_size).astype(int)
+            # scalar coordinate of the cell
+            cell_ind = self.get_cell_ind(cell_coor)
+            cell_allocation[cell_ind].append(par_ind)
+        
+        # create head and first
+        self.head = np.empty(head_length, dtype = int)
+        self.first = np.empty(pos_all.shape[0], dtype = int)
+        # max_int is used to mark the end of a cell
+        max_int = np.iinfo(int).max
+        for i in range(head_length):
+            par_list = cell_allocation[i]
+            if not par_list: # if no particle in this cell
+                self.head[i] = max_int
+            else:
+                current = par_list.pop()
+                self.head[i] = current
+                while par_list:
+                    self.first[current] = par_list.pop()
+                    current = self.first[current]
+                self.first[current] = max_int
+
+
+    def get_cell_ind(self, cell_coor):
+        """
+        Convert n-D cell coordinate to 1D cell index
+        """
+        cell_ind = 0
+        dim = len(cell_coor)
+        for i in range(dim-1):
+            cell_ind += cell_coor[i] * reduce(lambda x,y:x*y, self.cells_shape[i+1:])
+        cell_ind += cell_coor[-1]
+        return cell_ind
+
+
+    def find_cell_par(self, cell_ind):
+        """
+        find the particle located in the cell
+        """
+        current = self.head[cell_ind]
+        result = []
+        while current != np.iinfo(int).max:
+            result.append(current)
+            current = self.first[current]
+        return result
+
+
+    def find_near_par(self, cell_coor):
+        # find coordinate of all neighbours cell for the use of itertools product
+        # [[a-1,a,a+1],[b-1,b,b+1],...]
+        dim = len(cell_coor)
+        neighbour_coor = np.empty((dim, 3), dtype = int)
+        for axis in range(dim):
+            coor = cell_coor[axis]
+            neighbour_coor[axis] = np.mod([coor-1,coor,coor+1], self.cells_shape[axis])
+
+        # convert to 1D cell index and remove repeatition, use set to prevent repetition (if cell number is small)
+        cell_ind_set = set()
+        for cell_coor in iter_product(*neighbour_coor):
+            cell_ind_set.add(self.get_cell_ind(cell_coor))
+
+        # find the particles in the neighbours
+        search_range = []
+        for cell_ind in cell_ind_set:
+            search_range += self.find_cell_par(cell_ind)
+        return search_range
+
+
 class Particle_dynamics_sim(object):
     def __init__(self, dt, iter_num, par_num, dim, box=(5.,5.,5.), inter_range = None):
         self. dt = dt
@@ -20,13 +103,14 @@ class Particle_dynamics_sim(object):
         self.linked_cell = None
         self.inter_range = inter_range
 
+
     def initialize(self, start_pos, start_v):
         self.traj[0] = start_pos
         self.v0 = start_v
         self.initialized = True
 
 
-    def cal_force(self, pos_all, linked_cell, cell_shape, cell_size):
+    def cal_force(self, pos_all, linked_cell, cells_shape, cell_size):
         """
         """
         dim = len(self.box)
@@ -38,7 +122,7 @@ class Particle_dynamics_sim(object):
                 search_range = list(range(par_num))
             else:
                 cell_coor = (pos1//cell_size).astype(int)
-                search_range = find_near_par(linked_cell, cell_coor, cell_shape)
+                search_range = self.linked_cell.find_near_par(cell_coor)
             for par_index2 in search_range:
                 if par_index1 != par_index2:
                     pos2 = pos_all[par_index2]
@@ -64,13 +148,13 @@ class Particle_dynamics_sim(object):
         traj[time_slice, particle_index, dim]
         """
         if self.inter_range is not None:
-            cell_shape = (self.box//self.inter_range).astype(int)
-            for k in range(len(cell_shape)):
-                if cell_shape[k]==0:
-                    cell_shape[k] = 1
-            cell_size = self.box/cell_shape
+            cells_shape = (self.box//self.inter_range).astype(int)
+            for k in range(len(cells_shape)):
+                if cells_shape[k]==0:
+                    cells_shape[k] = 1
+            cell_size = self.box/cells_shape
         else:
-            cell_shape = None
+            cells_shape = None
             cell_size = None
 
         vtk_writer = vtktools.VTK_XML_Serial_Unstructured()
@@ -85,8 +169,8 @@ class Particle_dynamics_sim(object):
         while next < self.traj.shape[0]:
             # calculate force
             if self.inter_range is not None:
-                self.linked_cell = create_linked_cell(self.traj[next-1], self.box, self.inter_range)
-            force = self.cal_force(self.traj[next-1], self.linked_cell, cell_shape, cell_size)
+                self.linked_cell = Linked_cell(self.traj[next-1], self.box, self.inter_range)
+            force = self.cal_force(self.traj[next-1], self.linked_cell, cells_shape, cell_size)
             # verlet step
             self.traj[next] = 2*self.traj[next-1] - self.traj[next-2] + self.dt**2*force 
             # periodic boundary        
@@ -106,90 +190,6 @@ class Particle_dynamics_sim(object):
 
         # vtk_writer.writePVD("MD.pvd")
         return self.traj
-
-
-def get_cell_ind(cell_coor, cell_shape):
-    """
-    Convert n-D cell coordinate to 1D cell index
-    """
-    cell_ind = 0
-    dim = len(cell_coor)
-    for i in range(dim-1):
-        cell_ind += cell_coor[i] * reduce(lambda x,y:x*y, cell_shape[i+1:])
-    cell_ind += cell_coor[-1]
-    return cell_ind
-
-
-def create_linked_cell(pos_all, box, r):
-    box = np.array(box)
-    # how many cells in each dimension
-    cell_shape = (box//r).astype(int)
-    for k in range(len(cell_shape)):
-        if cell_shape[k]==0:
-            cell_shape[k] = 1
-    # the size of one cell
-    cell_size = box/cell_shape
-    # total number of cells
-    head_length = reduce(lambda x,y:x*y, cell_shape)
-
-    # allocate particles to different cells
-    cell_allocation = [[] for i in range(head_length)]
-    for par_ind in range(pos_all.shape[0]):
-        pos = pos_all[par_ind]
-        # n-D coordinate of the cell
-        cell_coor = (pos//cell_size).astype(int)
-        # scalar coordinate of the cell
-        cell_ind = get_cell_ind(cell_coor, cell_shape)
-        cell_allocation[cell_ind].append(par_ind)
-
-    # create head and first
-    head = np.empty(head_length, dtype = int)
-    first = np.empty(pos_all.shape[0], dtype = int)
-    # max_int is used to mark the end of a cell
-    max_int = np.iinfo(int).max
-    for i in range(head_length):
-        par_list = cell_allocation[i]
-        if not par_list: # if no particle in this cell
-            head[i] = max_int
-        else:
-            current = par_list.pop()
-            head[i] = current
-            while par_list:
-                first[current] = par_list.pop()
-                current = first[current]
-            first[current] = max_int
-
-    return [head, first]
-
-
-def find_cell_par(linked_cell, cell_ind):
-    current = linked_cell[0][cell_ind]
-    result = []
-    while current!=np.iinfo(int).max:
-        result.append(current)
-        current = linked_cell[1][current]
-    return result
-
-
-def find_near_par(linked_cell, cell_coor, cell_shape):
-    # find coordinate of all neighbours cell for the use of itertools product
-    # [[a-1,a,a+1],[b-1,b,b+1],...]
-    dim = len(cell_coor)
-    neighbour_coor = np.empty((dim, 3), dtype = int)
-    for axis in range(dim):
-        coor = cell_coor[axis]
-        neighbour_coor[axis] = np.mod([coor-1,coor,coor+1], cell_shape[axis])
-
-    # convert to 1D cell index and remove repeatition
-    cell_ind_set = set()
-    for cell_coor in iter_product(*neighbour_coor):
-        cell_ind_set.add(get_cell_ind(cell_coor, cell_shape))
-
-    # find the particles in the neighbours
-    search_range = []
-    for cell_ind in cell_ind_set:
-        search_range += find_cell_par(linked_cell, cell_ind)
-    return search_range
 
 
 def LJ_force(x):
@@ -224,15 +224,11 @@ def LJ_total_energy(traj, step, dt):
 
 
 def test_small():
-    # test get_cell_ind
-    cell_shape = (2,3,4)
-    cell_coor = (1,1,1)
-    assert(get_cell_ind(cell_coor, cell_shape)==17)
 
     # test create_linked_cell
     box = np.array((2.,2.))
     r = 1.
-    cell_shape = (box//r).astype(int)
+    cells_shape = (box//r).astype(int)
     pos_all = np.array([
             [1.2,0.5],
             [0.2,1.3],
@@ -243,23 +239,28 @@ def test_small():
             [1.8,1.6],
             [0.6,1.8]
     ])
-    linked_cell = create_linked_cell(pos_all, box, r)
+    linked_cell = Linked_cell(pos_all, box, r)
     max_int = np.iinfo(int).max
     head = np.array([max_int,7,4,6])
     first = np.array([max_int, max_int,0,1,2,max_int,5,3])
-    assert(np.array_equal(linked_cell[0],head))
-    assert(np.array_equal(linked_cell[1],first))
+    assert(np.array_equal(linked_cell.head,head))
+    assert(np.array_equal(linked_cell.first,first))
+
+    # test get_cell_ind
+    cells_shape = (2,3,4)
+    cell_coor = (1,1,1)
+    assert(linked_cell.get_cell_ind(cell_coor)==17)
 
     # test find_cell_par
-    result = find_cell_par(linked_cell, 2)
+    result = linked_cell.find_cell_par(2)
     result.sort()
     assert((result == [0,2,4]))
 
     # test find_near_par
-    result = find_near_par(linked_cell, (0,1), cell_shape)
+    result = linked_cell.find_near_par((0,1))
     result.sort()
     assert(result == [0,1,2,3,4,5,6,7])
-# test_small()
+test_small()
     
 # parameters
 dt = 0.0001
@@ -267,7 +268,7 @@ iter_num = 1000
 par_num = 10
 dim = 3
 box = [3.]*dim
-inter_range = 2.5
+inter_range = np.inf
 
 # np.random.seed(0)
 # test = Particle_dynamics_sim(dt=0.001, iter_num=1000, par_num = 10, dim = 3, box = (3.,3.,3.))
